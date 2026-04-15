@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f0f18" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Despesas" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>Despesas Recorrentes</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { background: #0f0f18; font-family: 'DM Sans', sans-serif; overscroll-behavior: none; }
+    #root { min-height: 100vh; }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+    const MONTH_NAMES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+      "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+    const formatCurrency = (v) =>
+      new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
+
+    const monthKey = (y, m) => `${y}-${String(m + 1).padStart(2, "0")}`;
+
+    const isDueThisMonth = (expense, year, month) => {
+      const start = expense.startYearMonth || "2020-01";
+      const [sy, sm] = start.split("-").map(Number);
+      const diff = (year - sy) * 12 + (month - (sm - 1));
+      if (diff < 0) return false;
+      const every = expense.every || 1;
+      return diff % every === 0;
+    };
+
+    const getDaysUntilDue = (dueDay) => {
+      const today = new Date();
+      const due = new Date(today.getFullYear(), today.getMonth(), dueDay);
+      if (due < today) due.setMonth(due.getMonth() + 1);
+      return Math.ceil((due - today) / 86400000);
+    };
+
+    const STORAGE_KEY = "despesas-v1";
+    const PAYMENTS_KEY = "pagamentos-v1";
+
+    const loadData = (key, fallback) => {
+      try {
+        const v = localStorage.getItem(key);
+        return v ? JSON.parse(v) : fallback;
+      } catch { return fallback; }
+    };
+
+    const saveData = (key, data) => {
+      try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
+    };
+
+    // ─── Icons ────────────────────────────────────────────────────────────────
+    const Icon = {
+      Plus: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+      Check: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>,
+      Bell: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
+      Edit: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+      Trash: () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>,
+      ChevLeft: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>,
+      ChevRight: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>,
+      X: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+      Alert: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+    };
+
+    // ─── Modal ────────────────────────────────────────────────────────────────
+    function Modal({ open, onClose, title, children }) {
+      if (!open) return null;
+      return (
+        <div style={{
+          position:"fixed", inset:0, zIndex:1000,
+          background:"rgba(0,0,0,0.7)", backdropFilter:"blur(6px)",
+          display:"flex", alignItems:"flex-end", justifyContent:"center",
+        }} onClick={onClose}>
+          <div onClick={e=>e.stopPropagation()} style={{
+            background:"#1c1c28", borderRadius:"24px 24px 0 0",
+            width:"100%", maxWidth:480, maxHeight:"92vh",
+            overflow:"auto", padding:"24px 20px 40px",
+            animation:"slideUp .28s cubic-bezier(.32,1.1,.46,1)"
+          }}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+              <span style={{fontFamily:"'DM Serif Display',serif",fontSize:20,color:"#f5f0e8"}}>{title}</span>
+              <button onClick={onClose} style={{background:"#2e2e3e",border:"none",borderRadius:10,padding:"6px 8px",cursor:"pointer",color:"#888",lineHeight:0}}><Icon.X/></button>
+            </div>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Expense Form ─────────────────────────────────────────────────────────
+    function ExpenseForm({ initial, onSave, onClose }) {
+      const now = new Date();
+      const [form, setForm] = useState(initial || {
+        description: "", amount: "", dueDay: "10",
+        every: "1", startYearMonth: monthKey(now.getFullYear(), now.getMonth())
+      });
+
+      const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+      const handleSave = () => {
+        if (!form.description.trim() || !form.amount || !form.dueDay) return;
+        onSave({
+          ...form,
+          id: form.id || Date.now().toString(),
+          amount: parseFloat(String(form.amount).replace(",", ".")),
+          dueDay: parseInt(form.dueDay),
+          every: parseInt(form.every) || 1,
+        });
+      };
+
+      const fieldStyle = {
+        width:"100%", background:"#13131e", border:"1.5px solid #2e2e42",
+        borderRadius:12, padding:"12px 14px", color:"#f5f0e8", fontSize:16,
+        outline:"none", boxSizing:"border-box", fontFamily:"'DM Sans',sans-serif",
+        WebkitAppearance:"none", appearance:"none",
+      };
+      const labelStyle = {
+        color:"#888", fontSize:12, fontWeight:600, letterSpacing:1,
+        marginBottom:6, display:"block", textTransform:"uppercase"
+      };
+
+      return (
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <div>
+            <label style={labelStyle}>Descrição</label>
+            <input style={fieldStyle} value={form.description}
+              onChange={e=>set("description",e.target.value)} placeholder="Ex: Netflix, Aluguel..." />
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div>
+              <label style={labelStyle}>Valor (R$)</label>
+              <input style={fieldStyle} type="number" inputMode="decimal"
+                value={form.amount} onChange={e=>set("amount",e.target.value)} placeholder="0,00" />
+            </div>
+            <div>
+              <label style={labelStyle}>Dia vencimento</label>
+              <input style={fieldStyle} type="number" inputMode="numeric"
+                min="1" max="31" value={form.dueDay} onChange={e=>set("dueDay",e.target.value)} placeholder="10" />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Periodicidade</label>
+            <select style={{...fieldStyle}} value={form.every} onChange={e=>set("every",e.target.value)}>
+              <option value="1">Mensal (todo mês)</option>
+              <option value="2">Bimestral (a cada 2 meses)</option>
+              <option value="3">Trimestral (a cada 3 meses)</option>
+              <option value="6">Semestral (a cada 6 meses)</option>
+              <option value="12">Anual (a cada 12 meses)</option>
+            </select>
+          </div>
+          {parseInt(form.every) > 1 && (
+            <div>
+              <label style={labelStyle}>Início da recorrência</label>
+              <input style={fieldStyle} type="month" value={form.startYearMonth}
+                onChange={e=>set("startYearMonth",e.target.value)} />
+            </div>
+          )}
+          <button onClick={handleSave} style={{
+            marginTop:8, background:"linear-gradient(135deg,#d4a55a,#e8c07d)",
+            border:"none", borderRadius:14, padding:"15px",
+            color:"#1a1208", fontSize:15, fontWeight:700,
+            cursor:"pointer", fontFamily:"'DM Sans',sans-serif", letterSpacing:0.5
+          }}>
+            {initial ? "Salvar Alterações" : "Adicionar Despesa"}
+          </button>
+        </div>
+      );
+    }
+
+    // ─── Main App ─────────────────────────────────────────────────────────────
+    function App() {
+      const now = new Date();
+      const [viewYear, setViewYear] = useState(now.getFullYear());
+      const [viewMonth, setViewMonth] = useState(now.getMonth());
+      const [expenses, setExpenses] = useState(() => loadData(STORAGE_KEY, []));
+      const [payments, setPayments] = useState(() => loadData(PAYMENTS_KEY, {}));
+      const [showAdd, setShowAdd] = useState(false);
+      const [editing, setEditing] = useState(null);
+      const [tab, setTab] = useState("mes");
+      const [notifPerm, setNotifPerm] = useState("default");
+
+      useEffect(() => {
+        if ("Notification" in window) setNotifPerm(Notification.permission);
+      }, []);
+
+      useEffect(() => { saveData(STORAGE_KEY, expenses); }, [expenses]);
+      useEffect(() => { saveData(PAYMENTS_KEY, payments); }, [payments]);
+
+      const requestNotif = async () => {
+        if (!("Notification" in window)) {
+          alert("Seu navegador não suporta notificações.");
+          return;
+        }
+        const p = await Notification.requestPermission();
+        setNotifPerm(p);
+        if (p === "granted") checkUpcomingNotifications(expenses);
+      };
+
+      const checkUpcomingNotifications = (exps) => {
+        if (Notification.permission !== "granted") return;
+        exps.forEach(exp => {
+          const days = getDaysUntilDue(exp.dueDay);
+          if (days <= 3) {
+            new Notification("💰 Despesa a vencer", {
+              body: `${exp.description} — ${formatCurrency(exp.amount)} vence ${days === 0 ? "hoje!" : `em ${days} dia(s)`}`,
+            });
+          }
+        });
+      };
+
+      const dueThisMonth = expenses.filter(e => isDueThisMonth(e, viewYear, viewMonth));
+      const payKey = (id) => `${id}_${monthKey(viewYear, viewMonth)}`;
+      const isPaid = (id) => !!payments[payKey(id)];
+
+      const togglePaid = (id) => {
+        const k = payKey(id);
+        setPayments(p => {
+          const copy = { ...p };
+          if (copy[k]) delete copy[k];
+          else copy[k] = { paid: true, date: new Date().toISOString() };
+          return copy;
+        });
+      };
+
+      const totalMonth = dueThisMonth.reduce((s, e) => s + e.amount, 0);
+      const totalPaid = dueThisMonth.filter(e => isPaid(e.id)).reduce((s, e) => s + e.amount, 0);
+      const totalPending = totalMonth - totalPaid;
+
+      const addExpense = (data) => {
+        setExpenses(prev => {
+          const idx = prev.findIndex(e => e.id === data.id);
+          if (idx >= 0) { const a = [...prev]; a[idx] = data; return a; }
+          return [...prev, data];
+        });
+        setShowAdd(false);
+        setEditing(null);
+      };
+
+      const deleteExpense = (id) => {
+        if (!confirm("Remover esta despesa?")) return;
+        setExpenses(prev => prev.filter(e => e.id !== id));
+      };
+
+      const prevMonth = () => {
+        if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
+        else setViewMonth(m => m - 1);
+      };
+      const nextMonth = () => {
+        if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
+        else setViewMonth(m => m + 1);
+      };
+
+      const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth();
+      const sorted = [...dueThisMonth].sort((a, b) => a.dueDay - b.dueDay);
+      const upcomingSoon = isCurrentMonth
+        ? sorted.filter(e => !isPaid(e.id) && getDaysUntilDue(e.dueDay) <= 5)
+        : [];
+
+      return (
+        <div style={{
+          minHeight:"100vh", background:"#0f0f18",
+          fontFamily:"'DM Sans',sans-serif", color:"#f5f0e8",
+          maxWidth:480, margin:"0 auto", paddingBottom:80
+        }}>
+          <style>{`
+            @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+            @keyframes slideUp { from { transform:translateY(100%); opacity:0 } to { transform:translateY(0); opacity:1 } }
+            @keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
+            input:focus, select:focus { border-color:#d4a55a !important; }
+            input[type=month]::-webkit-calendar-picker-indicator { filter:invert(0.7); }
+            select option { background:#1c1c28; }
+          `}</style>
+
+          {/* Header */}
+          <div style={{
+            background:"linear-gradient(180deg,#1a1a2e 0%,#0f0f18 100%)",
+            padding:"56px 20px 20px", position:"sticky", top:0, zIndex:100
+          }}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{fontFamily:"'DM Serif Display',serif",fontSize:26,letterSpacing:0.5}}>
+                Despesas
+              </span>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={requestNotif} style={{
+                  background: notifPerm==="granted" ? "#1e3a1e" : "#1c1c28",
+                  border: notifPerm==="granted" ? "1.5px solid #4caf50" : "1.5px solid #2e2e42",
+                  borderRadius:12, padding:"8px 10px", cursor:"pointer",
+                  color: notifPerm==="granted" ? "#4caf50" : "#888", lineHeight:0
+                }} title="Notificações">
+                  <Icon.Bell/>
+                </button>
+                <button onClick={() => setShowAdd(true)} style={{
+                  background:"linear-gradient(135deg,#d4a55a,#e8c07d)",
+                  border:"none", borderRadius:12, padding:"8px 12px",
+                  color:"#1a1208", cursor:"pointer", lineHeight:0
+                }}>
+                  <Icon.Plus/>
+                </button>
+              </div>
+            </div>
+
+            {/* Month nav */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:16}}>
+              <button onClick={prevMonth} style={{background:"#1c1c28",border:"1.5px solid #2e2e42",borderRadius:10,padding:"6px 8px",cursor:"pointer",color:"#888",lineHeight:0}}><Icon.ChevLeft/></button>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:18,fontWeight:600}}>{MONTH_NAMES[viewMonth]}</div>
+                <div style={{fontSize:12,color:"#888"}}>{viewYear}</div>
+              </div>
+              <button onClick={nextMonth} style={{background:"#1c1c28",border:"1.5px solid #2e2e42",borderRadius:10,padding:"6px 8px",cursor:"pointer",color:"#888",lineHeight:0}}><Icon.ChevRight/></button>
+            </div>
+
+            {/* Tabs */}
+            <div style={{display:"flex",gap:8,marginTop:16,background:"#1c1c28",borderRadius:12,padding:4}}>
+              {[["mes","Mês Atual"],["todas","Todas as Despesas"]].map(([k,l]) => (
+                <button key={k} onClick={()=>setTab(k)} style={{
+                  flex:1, border:"none", borderRadius:9, padding:"9px 0",
+                  background: tab===k ? "linear-gradient(135deg,#d4a55a,#e8c07d)" : "transparent",
+                  color: tab===k ? "#1a1208" : "#888",
+                  fontSize:13, fontWeight:600, cursor:"pointer",
+                  transition:"all .2s", fontFamily:"'DM Sans',sans-serif"
+                }}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          {tab === "mes" ? (
+            <div style={{padding:"0 16px",animation:"fadeIn .3s ease"}}>
+              {/* Summary */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:16,marginBottom:16}}>
+                {[
+                  {label:"Total do Mês", value:totalMonth, color:"#d4a55a"},
+                  {label:"Já Paguei", value:totalPaid, color:"#4caf50"},
+                  {label:"A Pagar", value:totalPending, color:"#ef5350"},
+                  {label:"Pagas", value:`${dueThisMonth.filter(e=>isPaid(e.id)).length}/${dueThisMonth.length}`, color:"#7c8cff", isText:true},
+                ].map((c,i) => (
+                  <div key={i} style={{
+                    background:"#1c1c28", borderRadius:16, padding:"14px 16px",
+                    borderLeft:`3px solid ${c.color}`
+                  }}>
+                    <div style={{fontSize:11,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>{c.label}</div>
+                    <div style={{fontSize:c.isText?20:15,fontWeight:700,color:c.color}}>
+                      {c.isText ? c.value : formatCurrency(c.value)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Alert vencendo em breve */}
+              {upcomingSoon.length > 0 && (
+                <div style={{
+                  background:"#1e1608",border:"1.5px solid #6b4a0e",
+                  borderRadius:14,padding:"12px 14px",marginBottom:14,
+                  display:"flex",alignItems:"flex-start",gap:10
+                }}>
+                  <span style={{color:"#d4a55a",marginTop:1,flexShrink:0}}><Icon.Alert/></span>
+                  <div>
+                    <div style={{color:"#d4a55a",fontWeight:700,fontSize:13,marginBottom:4}}>Vencendo em breve</div>
+                    {upcomingSoon.map(e => (
+                      <div key={e.id} style={{color:"#c9a050",fontSize:12,marginTop:2}}>
+                        • {e.description} — dia {e.dueDay} ({getDaysUntilDue(e.dueDay) === 0 ? "Hoje!" : `em ${getDaysUntilDue(e.dueDay)} dia(s)`})
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Expenses list */}
+              {sorted.length === 0 ? (
+                <div style={{textAlign:"center",padding:"48px 20px",color:"#555"}}>
+                  <div style={{fontSize:40,marginBottom:12}}>📭</div>
+                  <div style={{fontSize:15,fontWeight:500}}>Nenhuma despesa este mês</div>
+                  <div style={{fontSize:13,color:"#444",marginTop:6}}>Toque em + para adicionar</div>
+                </div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {sorted.map(exp => {
+                    const paid = isPaid(exp.id);
+                    const daysLeft = isCurrentMonth ? getDaysUntilDue(exp.dueDay) : null;
+                    const urgent = daysLeft !== null && daysLeft <= 3 && !paid;
+                    return (
+                      <div key={exp.id} style={{
+                        background: paid ? "#141e14" : urgent ? "#1e1608" : "#1c1c28",
+                        borderRadius:16, padding:"14px 16px",
+                        border:`1.5px solid ${paid ? "#2d4a2d" : urgent ? "#5a3a08" : "#2e2e42"}`,
+                        display:"flex", alignItems:"center", gap:12,
+                      }}>
+                        <button onClick={() => togglePaid(exp.id)} style={{
+                          flexShrink:0, width:32, height:32, borderRadius:10,
+                          border:`2px solid ${paid ? "#4caf50" : "#3e3e52"}`,
+                          background: paid ? "#4caf50" : "transparent",
+                          cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+                          color:"white",
+                        }}>
+                          {paid && <Icon.Check/>}
+                        </button>
+
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{
+                            fontSize:14, fontWeight:600,
+                            color: paid ? "#6a8f6a" : "#f5f0e8",
+                            textDecoration: paid ? "line-through" : "none",
+                            whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"
+                          }}>{exp.description}</div>
+                          <div style={{fontSize:12,color:"#666",marginTop:2,display:"flex",gap:8}}>
+                            <span>Dia {exp.dueDay}</span>
+                            {exp.every > 1 && <span>• a cada {exp.every}m</span>}
+                            {urgent && <span style={{color:"#d4a55a",fontWeight:600}}>• {daysLeft === 0 ? "Hoje!" : `${daysLeft}d`}</span>}
+                          </div>
+                        </div>
+
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontSize:14,fontWeight:700,color:paid?"#4caf50":"#d4a55a"}}>
+                            {formatCurrency(exp.amount)}
+                          </div>
+                          <div style={{display:"flex",gap:4,marginTop:4,justifyContent:"flex-end"}}>
+                            <button onClick={()=>setEditing(exp)} style={{background:"#2e2e42",border:"none",borderRadius:7,padding:"5px 7px",cursor:"pointer",color:"#888",lineHeight:0}}><Icon.Edit/></button>
+                            <button onClick={()=>deleteExpense(exp.id)} style={{background:"#2e1e1e",border:"none",borderRadius:7,padding:"5px 7px",cursor:"pointer",color:"#ef5350",lineHeight:0}}><Icon.Trash/></button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{padding:"0 16px",animation:"fadeIn .3s ease"}}>
+              <div style={{marginTop:16,marginBottom:12,color:"#888",fontSize:12,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>
+                {expenses.length} {expenses.length === 1 ? "despesa cadastrada" : "despesas cadastradas"}
+              </div>
+              {expenses.length === 0 ? (
+                <div style={{textAlign:"center",padding:"48px 20px",color:"#555"}}>
+                  <div style={{fontSize:40,marginBottom:12}}>📋</div>
+                  <div style={{fontSize:15,fontWeight:500}}>Nenhuma despesa cadastrada</div>
+                  <div style={{fontSize:13,color:"#444",marginTop:6}}>Toque em + para adicionar</div>
+                </div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {[...expenses].sort((a,b)=>a.dueDay-b.dueDay).map(exp => (
+                    <div key={exp.id} style={{
+                      background:"#1c1c28", borderRadius:16, padding:"14px 16px",
+                      border:"1.5px solid #2e2e42", display:"flex", alignItems:"center", gap:12
+                    }}>
+                      <div style={{
+                        width:42, height:42, borderRadius:12, background:"#13131e",
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        color:"#d4a55a", fontWeight:700, fontSize:15, flexShrink:0
+                      }}>{exp.dueDay}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:14,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{exp.description}</div>
+                        <div style={{fontSize:12,color:"#666",marginTop:2}}>
+                          {exp.every === 1 ? "Mensal" : `A cada ${exp.every} meses`}
+                        </div>
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontSize:14,fontWeight:700,color:"#d4a55a"}}>{formatCurrency(exp.amount)}</div>
+                        <div style={{display:"flex",gap:4,marginTop:4,justifyContent:"flex-end"}}>
+                          <button onClick={()=>{ setEditing(exp); setTab("mes"); }} style={{background:"#2e2e42",border:"none",borderRadius:7,padding:"5px 7px",cursor:"pointer",color:"#888",lineHeight:0}}><Icon.Edit/></button>
+                          <button onClick={()=>deleteExpense(exp.id)} style={{background:"#2e1e1e",border:"none",borderRadius:7,padding:"5px 7px",cursor:"pointer",color:"#ef5350",lineHeight:0}}><Icon.Trash/></button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="Nova Despesa">
+            <ExpenseForm onSave={addExpense} onClose={()=>setShowAdd(false)} />
+          </Modal>
+
+          <Modal open={!!editing} onClose={()=>setEditing(null)} title="Editar Despesa">
+            {editing && <ExpenseForm initial={editing} onSave={addExpense} onClose={()=>setEditing(null)} />}
+          </Modal>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js").catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
