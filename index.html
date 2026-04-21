@@ -250,7 +250,7 @@ function PinScreen({mode,onSuccess,storedPin,storedWord}){
 
 // ── Forms ─────────────────────────────────────────────────────────────────────
 function ExpenseForm({initial,accounts,categories,defaultMK,onSave}){
-  const [f,setF]=useState(initial||{description:"",amount:"",dueDay:"",type:"recurring",every:"1",repetitions:"2",startYearMonth:defaultMK,accountId:"",categoryId:"cat-outros"});
+  const [f,setF]=useState(initial||{description:"",amount:"",dueDay:"",type:"recurring",every:"1",repetitions:"2",startYearMonth:defaultMK,accountId:"",categoryId:"cat-outros",notes:""});
   const [err,setErr]=useState("");
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const save=()=>{
@@ -260,7 +260,7 @@ function ExpenseForm({initial,accounts,categories,defaultMK,onSave}){
     const day=parseInt(f.dueDay);
     if(isNaN(day)||day<1||day>31){setErr("Dia inválido (1–31)");return;}
     setErr("");
-    onSave({...f,id:f.id||Date.now().toString(),amount:parseFloat(f.amount)||0,dueDay:day,every:parseInt(f.every)||1,repetitions:parseInt(f.repetitions)||1,accountId:f.accountId||"",categoryId:f.categoryId||"cat-outros"});
+    onSave({...f,id:f.id||Date.now().toString(),amount:parseFloat(f.amount)||0,dueDay:day,every:parseInt(f.every)||1,repetitions:parseInt(f.repetitions)||1,accountId:f.accountId||"",categoryId:f.categoryId||"cat-outros",notes:(f.notes||"").slice(0,255)});
   };
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -304,6 +304,13 @@ function ExpenseForm({initial,accounts,categories,defaultMK,onSave}){
           {accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </div>}
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
+          <label style={{...L,marginBottom:0}}>Observação (opcional)</label>
+          <span style={{fontSize:10,color:(f.notes||"").length>240?"#fbbf24":"#4a4a6a",fontWeight:600}}>{(f.notes||"").length}/255</span>
+        </div>
+        <textarea style={{...F,minHeight:70,resize:"vertical",fontFamily:"inherit",lineHeight:1.4}} maxLength={255} value={f.notes||""} onChange={e=>s("notes",e.target.value.slice(0,255))} placeholder="Ex: cartão do crédito no final 1234, dividir com fulano..."/>
+      </div>
       <button onClick={save} style={Btn()}>{initial?"Salvar Alterações":"Adicionar Despesa"}</button>
     </div>
   );
@@ -801,6 +808,7 @@ function App(){
                         {paid&&info&&<span style={{color:"#34d399"}}>· {fmtDate(info.date)} · {accName(info.accountId)}</span>}
                         {urgent&&<span style={{color:"#fca5a5",fontWeight:600}}>{days===0?"Hoje!":days+"d"}</span>}
                       </div>
+                      {exp.notes&&<div style={{fontSize:11,color:"#8888aa",marginTop:4,lineHeight:1.35,whiteSpace:"pre-wrap",wordBreak:"break-word",fontStyle:"italic"}}>{exp.notes}</div>}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{fontSize:13,fontWeight:700,color:paid?"#34d399":"#a78bfa"}}>{fmtBRL(exp.amount)}</div>
