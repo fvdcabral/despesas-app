@@ -54,6 +54,16 @@ const monthKey = (y,m) => `${y}-${String(m+1).padStart(2,"0")}`;
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const daysUntil = day => { const n=new Date(); const d=new Date(n.getFullYear(),n.getMonth(),day); if(d<n) d.setMonth(d.getMonth()+1); return Math.ceil((d-n)/86400000); };
 
+const DEFAULT_CATEGORIES = [
+  {id:"cat-moradia",     name:"Moradia",     color:"#f87171"},
+  {id:"cat-alimentacao", name:"Alimentação", color:"#fbbf24"},
+  {id:"cat-transporte",  name:"Transporte",  color:"#60a5fa"},
+  {id:"cat-lazer",       name:"Lazer",       color:"#a78bfa"},
+  {id:"cat-saude",       name:"Saúde",       color:"#34d399"},
+  {id:"cat-outros",      name:"Outros",      color:"#6b6b8a"},
+];
+const CATEGORY_COLORS = ["#f87171","#fb923c","#fbbf24","#a3e635","#34d399","#22d3ee","#60a5fa","#818cf8","#a78bfa","#e879f9","#f472b6","#6b6b8a"];
+
 const isActiveInMonth = (exp, year, month) => {
   const start = exp.startYearMonth || "2020-01";
   const [sy,sm] = start.split("-").map(Number);
@@ -106,6 +116,19 @@ const F = {
 const L = {color:"#6b6b8a",fontSize:11,fontWeight:700,letterSpacing:1.2,marginBottom:6,display:"block",textTransform:"uppercase"};
 const Btn = (g="#6366f1,#8b5cf6") => ({border:"none",borderRadius:13,padding:"14px",color:"white",fontSize:15,fontWeight:700,cursor:"pointer",width:"100%",background:`linear-gradient(135deg,${g})`});
 const Card = (b="#2a2a3d") => ({background:"#13132a",borderRadius:16,padding:"14px 16px",border:`1.5px solid ${b}`});
+
+// ── FilterChip ────────────────────────────────────────────────────────────────
+function FilterChip({label,active,onClick,color}){
+  const c = color || "#818cf8";
+  return(
+    <button onClick={onClick} style={{
+      flexShrink:0,border:active?`1.5px solid ${c}`:"1.5px solid #2a2a3d",
+      background:active?c+"22":"#13132a",color:active?c:"#6b6b8a",
+      borderRadius:20,padding:"5px 11px",fontSize:11,fontWeight:700,cursor:"pointer",
+      whiteSpace:"nowrap",letterSpacing:0.3
+    }}>{label}</button>
+  );
+}
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 function Modal({open,onClose,title,children}){
@@ -224,8 +247,8 @@ function PinScreen({mode,onSuccess,storedPin,storedWord}){
 }
 
 // ── Forms ─────────────────────────────────────────────────────────────────────
-function ExpenseForm({initial,accounts,defaultMK,onSave}){
-  const [f,setF]=useState(initial||{description:"",amount:"",dueDay:"",type:"recurring",every:"1",repetitions:"2",startYearMonth:defaultMK,accountId:""});
+function ExpenseForm({initial,accounts,categories,defaultMK,onSave}){
+  const [f,setF]=useState(initial||{description:"",amount:"",dueDay:"",type:"recurring",every:"1",repetitions:"2",startYearMonth:defaultMK,accountId:"",categoryId:"cat-outros"});
   const [err,setErr]=useState("");
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const save=()=>{
@@ -235,7 +258,7 @@ function ExpenseForm({initial,accounts,defaultMK,onSave}){
     const day=parseInt(f.dueDay);
     if(isNaN(day)||day<1||day>31){setErr("Dia inválido (1–31)");return;}
     setErr("");
-    onSave({...f,id:f.id||Date.now().toString(),amount:parseFloat(f.amount)||0,dueDay:day,every:parseInt(f.every)||1,repetitions:parseInt(f.repetitions)||1,accountId:f.accountId||""});
+    onSave({...f,id:f.id||Date.now().toString(),amount:parseFloat(f.amount)||0,dueDay:day,every:parseInt(f.every)||1,repetitions:parseInt(f.repetitions)||1,accountId:f.accountId||"",categoryId:f.categoryId||"cat-outros"});
   };
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -268,6 +291,11 @@ function ExpenseForm({initial,accounts,defaultMK,onSave}){
           {parseInt(f.every)>1&&<div><label style={L}>Mês inicial</label><input style={F} type="month" value={f.startYearMonth} onChange={e=>s("startYearMonth",e.target.value)}/></div>}
         </div>
       )}
+      <div><label style={L}>Categoria</label>
+        <select style={F} value={f.categoryId||"cat-outros"} onChange={e=>s("categoryId",e.target.value)}>
+          {(categories||DEFAULT_CATEGORIES).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
       {accounts.length>0&&<div><label style={L}>Conta (opcional)</label>
         <select style={F} value={f.accountId} onChange={e=>s("accountId",e.target.value)}>
           <option value="">— Selecionar depois —</option>
@@ -320,6 +348,65 @@ function AccountForm({initial,onSave}){
   );
 }
 
+function CategoryForm({initial,onSave}){
+  const [name,setName]=useState(initial?.name||"");
+  const [color,setColor]=useState(initial?.color||CATEGORY_COLORS[0]);
+  const save=()=>{ if(!name.trim()) return; onSave({id:initial?.id||("cat-"+Date.now().toString()),name:name.trim(),color}); };
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div><label style={L}>Nome da Categoria</label><input style={F} value={name} onChange={e=>setName(e.target.value)} placeholder="Ex: Moradia, Pet, Educação..."/></div>
+      <div><label style={L}>Cor</label>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8}}>
+          {CATEGORY_COLORS.map(c=>(
+            <button key={c} type="button" onClick={()=>setColor(c)} style={{
+              height:38,borderRadius:11,border:color===c?"2.5px solid #fff":"1.5px solid #2a2a3d",
+              background:c,cursor:"pointer"
+            }}/>
+          ))}
+        </div>
+      </div>
+      <button onClick={save} style={Btn(`${color},${color}`)}>{initial?"Salvar Alterações":"Adicionar Categoria"}</button>
+    </div>
+  );
+}
+
+function ImportForm({onImport,onCancel}){
+  const [file,setFile]=useState(null);
+  const [mode,setMode]=useState("merge");
+  const [err,setErr]=useState("");
+  const submit=()=>{ if(!file){setErr("Selecione um arquivo");return;} onImport(file,mode); };
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{...Card("#1e3a5f"),fontSize:12,color:"#93c5fd",lineHeight:1.5}}>
+        Importe um arquivo <b>.json</b> exportado do app (seu ou de outra pessoa que compartilhou). O PIN não é alterado.
+      </div>
+      <div><label style={L}>Arquivo JSON</label>
+        <input style={F} type="file" accept="application/json,.json" onChange={e=>{setFile(e.target.files[0]);setErr("");}}/>
+      </div>
+      <div><label style={L}>Modo de importação</label>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <label style={{...Card(mode==="merge"?"#6366f1":"#2a2a3d"),display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
+            <input type="radio" name="mode" checked={mode==="merge"} onChange={()=>setMode("merge")} style={{marginTop:3}}/>
+            <div>
+              <div style={{fontWeight:700,fontSize:14}}>Mesclar (recomendado)</div>
+              <div style={{fontSize:11,color:"#6b6b8a",marginTop:2}}>Combina com seus dados. Em conflito, vence o mais recente.</div>
+            </div>
+          </label>
+          <label style={{...Card(mode==="replace"?"#7f1d1d":"#2a2a3d"),display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
+            <input type="radio" name="mode" checked={mode==="replace"} onChange={()=>setMode("replace")} style={{marginTop:3}}/>
+            <div>
+              <div style={{fontWeight:700,fontSize:14,color:"#fca5a5"}}>Substituir tudo</div>
+              <div style={{fontSize:11,color:"#6b6b8a",marginTop:2}}>Apaga seus dados atuais e usa só os do arquivo.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      {err&&<div style={{color:"#f87171",fontSize:13}}>{err}</div>}
+      <button onClick={submit} style={Btn()}>Importar</button>
+    </div>
+  );
+}
+
 function PayForm({expense,accounts,onPay}){
   const [accountId,setAccountId]=useState(expense.accountId||"");
   const [date,setDate]=useState(todayStr());
@@ -364,17 +451,22 @@ function App(){
   const [incomes,  setIncomes]  = useState(()=>LS.get("inc-v2",[]));
   const [accounts, setAccounts] = useState(()=>LS.get("acc-v2",[]));
   const [payments, setPayments] = useState(()=>LS.get("pay-v2",{}));
+  const [categories,setCategories]=useState(()=>LS.get("cat-v1",DEFAULT_CATEGORIES));
   const [year,  setYear]  = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [tab,   setTab]   = useState("dashboard");
   const [modal, setModal] = useState(null);
   const [editing,   setEditing]   = useState(null);
   const [payTarget, setPayTarget] = useState(null);
+  const [filterCat,   setFilterCat]    = useState("");
+  const [filterAcc,   setFilterAcc]    = useState("");
+  const [filterStatus,setFilterStatus] = useState("");
 
   useEffect(()=>LS.set("exp-v2",expenses),[expenses]);
   useEffect(()=>LS.set("inc-v2",incomes),[incomes]);
   useEffect(()=>LS.set("acc-v2",accounts),[accounts]);
   useEffect(()=>LS.set("pay-v2",payments),[payments]);
+  useEffect(()=>LS.set("cat-v1",categories),[categories]);
 
   const handleAuth=(pin,word)=>{ if(!pinData||( pin&&word)) LS.set("pin-data",{pin,word}); setAuthed(true); };
 
@@ -391,6 +483,23 @@ function App(){
   const isPaid = id=>!!payments[payKey(id)];
   const getPayInfo = id=>payments[payKey(id)];
   const accName = id=>accounts.find(a=>a.id===id)?.name||"—";
+  const catOf = id=>categories.find(c=>c.id===id)||categories.find(c=>c.id==="cat-outros")||DEFAULT_CATEGORIES[5];
+  const filteredDue = dueMonth.filter(e=>{
+    if(filterCat&&(e.categoryId||"cat-outros")!==filterCat) return false;
+    if(filterAcc&&e.accountId!==filterAcc) return false;
+    if(filterStatus==="open"&&isPaid(e.id)) return false;
+    if(filterStatus==="paid"&&!isPaid(e.id)) return false;
+    return true;
+  });
+  const hasFilter = filterCat||filterAcc||filterStatus;
+  const clearFilters = ()=>{setFilterCat("");setFilterAcc("");setFilterStatus("");};
+
+  const catTotals = (()=>{
+    const map = {};
+    dueMonth.forEach(e=>{ const cid=e.categoryId||"cat-outros"; map[cid]=(map[cid]||0)+e.amount; });
+    return Object.entries(map).map(([id,value])=>{ const c=catOf(id); return {id,name:c.name,color:c.color,value}; }).sort((a,b)=>b.value-a.value);
+  })();
+  const catTotalSum = catTotals.reduce((s,c)=>s+c.value,0);
 
   const totalInc = incMonth.reduce((s,i)=>s+i.amount,0);
   const totalDue = dueMonth.reduce((s,e)=>s+e.amount,0);
@@ -404,14 +513,58 @@ function App(){
   const prevMonth=()=>{ if(month===0){setYear(y=>y-1);setMonth(11);}else setMonth(m=>m-1); };
   const nextMonth=()=>{ if(month===11){setYear(y=>y+1);setMonth(0);}else setMonth(m=>m+1); };
 
-  const saveExpense=d=>{ setExpenses(p=>{ const i=p.findIndex(e=>e.id===d.id); if(i>=0){const a=[...p];a[i]=d;return a;} return [...p,d]; }); setModal(null);setEditing(null); };
-  const saveIncome=d=>{  setIncomes(p=>{  const i=p.findIndex(e=>e.id===d.id); if(i>=0){const a=[...p];a[i]=d;return a;} return [...p,d]; }); setModal(null);setEditing(null); };
-  const saveAccount=d=>{ setAccounts(p=>{ const i=p.findIndex(e=>e.id===d.id); if(i>=0){const a=[...p];a[i]=d;return a;} return [...p,d]; }); setModal(null);setEditing(null); };
+  const stamp = d => ({...d, updatedAt: Date.now()});
+  const saveExpense=d=>{ const dd=stamp(d); setExpenses(p=>{ const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
+  const saveIncome=d=>{  const dd=stamp(d); setIncomes(p=>{  const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
+  const saveAccount=d=>{ const dd=stamp(d); setAccounts(p=>{ const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
+  const saveCategory=d=>{ const dd=stamp(d); setCategories(p=>{ const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
   const delExpense=id=>{ if(confirm("Remover despesa?")) setExpenses(p=>p.filter(e=>e.id!==id)); };
   const delIncome=id=>{  if(confirm("Remover receita?")) setIncomes(p=>p.filter(i=>i.id!==id)); };
   const delAccount=id=>{ if(confirm("Remover conta?"))  setAccounts(p=>p.filter(a=>a.id!==id)); };
-  const markPaid=(id,accId,payDate)=>{ setPayments(p=>({...p,[payKey(id)]:{paid:true,date:payDate||todayStr(),accountId:accId}})); setModal(null);setPayTarget(null); };
+  const delCategory=id=>{
+    if(id==="cat-outros"){alert("A categoria 'Outros' não pode ser removida (é usada como padrão).");return;}
+    const used=expenses.filter(e=>(e.categoryId||"cat-outros")===id).length;
+    const msg=used>0?`Esta categoria está em ${used} despesa(s). Elas serão movidas para 'Outros'. Continuar?`:"Remover categoria?";
+    if(!confirm(msg)) return;
+    if(used>0) setExpenses(p=>p.map(e=>(e.categoryId||"cat-outros")===id?stamp({...e,categoryId:"cat-outros"}):e));
+    setCategories(p=>p.filter(c=>c.id!==id));
+  };
+  const markPaid=(id,accId,payDate)=>{ setPayments(p=>({...p,[payKey(id)]:{paid:true,date:payDate||todayStr(),accountId:accId,updatedAt:Date.now()}})); setModal(null);setPayTarget(null); };
   const unmarkPaid=id=>{ setPayments(p=>{ const c={...p}; delete c[payKey(id)]; return c; }); };
+
+  const exportData=()=>{
+    const data = {version:1,exportedAt:new Date().toISOString(),expenses,incomes,accounts,payments,categories};
+    const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `despesas-${todayStr()}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  const importData=(file,mode)=>{
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try{
+        const d = JSON.parse(ev.target.result);
+        if(!d||typeof d!=="object") throw new Error("Formato inválido");
+        if(mode==="replace"){
+          setExpenses(d.expenses||[]); setIncomes(d.incomes||[]);
+          setAccounts(d.accounts||[]); setPayments(d.payments||{});
+          setCategories(d.categories&&d.categories.length?d.categories:DEFAULT_CATEGORIES);
+        }else{
+          const merge=(a,b)=>{ const m=new Map(); a.forEach(x=>m.set(x.id,x)); (b||[]).forEach(x=>{ const e=m.get(x.id); if(!e||(x.updatedAt||0)>(e.updatedAt||0)) m.set(x.id,x); }); return Array.from(m.values()); };
+          setExpenses(p=>merge(p,d.expenses));
+          setIncomes(p=>merge(p,d.incomes));
+          setAccounts(p=>merge(p,d.accounts));
+          setCategories(p=>merge(p,d.categories));
+          setPayments(p=>{ const np={...p}; Object.entries(d.payments||{}).forEach(([k,v])=>{ const cur=np[k]; if(!cur||(v.updatedAt||0)>(cur.updatedAt||0)||(!cur.updatedAt&&(v.date||"")>(cur.date||""))) np[k]=v; }); return np; });
+        }
+        setModal(null);
+        alert("Importado com sucesso!");
+      }catch(err){ alert("Arquivo inválido: "+err.message); }
+    };
+    reader.readAsText(file);
+  };
 
   const navItems=[
     {id:"dashboard",label:"Dashboard",icon:<Ic.Dash/>},
@@ -470,6 +623,47 @@ function App(){
               </div>
             ))}
           </div>
+
+          {/* Donut por categoria */}
+          {catTotalSum>0&&(()=>{
+            const R=58, SW=20, C=2*Math.PI*R;
+            let acc=0;
+            return(
+              <div style={{...Card(),marginTop:9,display:"flex",gap:14,alignItems:"center"}}>
+                <div style={{flexShrink:0,position:"relative",width:150,height:150}}>
+                  <svg width="150" height="150" viewBox="0 0 150 150">
+                    <circle cx="75" cy="75" r={R} fill="none" stroke="#1e1e35" strokeWidth={SW}/>
+                    <g transform="rotate(-90 75 75)">
+                      {catTotals.map(s=>{
+                        const frac = s.value/catTotalSum;
+                        const len = frac*C;
+                        const off = -acc;
+                        acc += len;
+                        return <circle key={s.id} cx="75" cy="75" r={R} fill="none"
+                          stroke={s.color} strokeWidth={SW}
+                          strokeDasharray={`${len} ${C-len}`} strokeDashoffset={off}/>;
+                      })}
+                    </g>
+                    <text x="75" y="70" textAnchor="middle" fill="#6b6b8a" fontSize="9" fontWeight="700" letterSpacing="1">CATEGORIAS</text>
+                    <text x="75" y="86" textAnchor="middle" fill="#f0eaff" fontSize="13" fontWeight="700">{catTotals.length}</text>
+                  </svg>
+                </div>
+                <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:5}}>
+                  {catTotals.slice(0,5).map(s=>{
+                    const pct = Math.round(s.value/catTotalSum*100);
+                    return(
+                      <div key={s.id} style={{display:"flex",alignItems:"center",gap:7,minWidth:0}}>
+                        <div style={{width:9,height:9,borderRadius:3,background:s.color,flexShrink:0}}/>
+                        <div style={{flex:1,minWidth:0,fontSize:11,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.name}</div>
+                        <div style={{fontSize:11,color:"#6b6b8a",fontWeight:600}}>{pct}%</div>
+                      </div>
+                    );
+                  })}
+                  {catTotals.length>5&&<div style={{fontSize:10,color:"#4a4a6a",marginTop:2}}>+{catTotals.length-5} categoria(s)</div>}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Commitment */}
           <div style={{...Card(),marginTop:9}}>
@@ -556,28 +750,59 @@ function App(){
             </div>
           )}
 
-          {dueMonth.length===0?(
+          {/* Filtros */}
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+            <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+              <FilterChip label="Todas" active={!filterStatus} onClick={()=>setFilterStatus("")}/>
+              <FilterChip label="Em aberto" active={filterStatus==="open"} onClick={()=>setFilterStatus(filterStatus==="open"?"":"open")} color="#f59e0b"/>
+              <FilterChip label="Pagas" active={filterStatus==="paid"} onClick={()=>setFilterStatus(filterStatus==="paid"?"":"paid")} color="#10b981"/>
+            </div>
+            <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+              <FilterChip label="Categoria" active={!filterCat} onClick={()=>setFilterCat("")}/>
+              {categories.map(c=>(
+                <FilterChip key={c.id} label={c.name} active={filterCat===c.id} onClick={()=>setFilterCat(filterCat===c.id?"":c.id)} color={c.color}/>
+              ))}
+            </div>
+            {accounts.length>0&&(
+              <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+                <FilterChip label="Conta" active={!filterAcc} onClick={()=>setFilterAcc("")}/>
+                {accounts.map(a=>(
+                  <FilterChip key={a.id} label={a.name} active={filterAcc===a.id} onClick={()=>setFilterAcc(filterAcc===a.id?"":a.id)} color="#38bdf8"/>
+                ))}
+              </div>
+            )}
+            {hasFilter&&(
+              <div style={{fontSize:11,color:"#818cf8",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span>Mostrando {filteredDue.length} de {dueMonth.length} · {fmtBRL(filteredDue.reduce((s,e)=>s+e.amount,0))}</span>
+                <button onClick={clearFilters} style={{background:"none",border:"none",color:"#818cf8",cursor:"pointer",fontSize:11,fontWeight:700}}>Limpar</button>
+              </div>
+            )}
+          </div>
+
+          {filteredDue.length===0?(
             <div style={{textAlign:"center",padding:"48px 0",color:"#4a4a6a"}}>
-              <div style={{fontSize:36,marginBottom:10}}>📭</div>
-              <div style={{fontSize:14}}>Nenhuma despesa este mês</div>
+              <div style={{fontSize:36,marginBottom:10}}>{hasFilter?"🔍":"📭"}</div>
+              <div style={{fontSize:14}}>{hasFilter?"Nenhuma despesa com esses filtros":"Nenhuma despesa este mês"}</div>
             </div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {dueMonth.map(exp=>{
+              {filteredDue.map(exp=>{
                 const paid=isPaid(exp.id);
                 const info=getPayInfo(exp.id);
                 const days=isCurr?daysUntil(exp.dueDay):null;
                 const urgent=days!==null&&days<=3&&!paid;
+                const cat=catOf(exp.categoryId);
                 return(
-                  <div key={exp.id} style={{...Card(paid?"#14532d":urgent?"#7f1d1d":"#2a2a3d"),display:"flex",alignItems:"center",gap:10}}>
+                  <div key={exp.id} style={{...Card(paid?"#14532d":urgent?"#7f1d1d":"#2a2a3d"),display:"flex",alignItems:"center",gap:10,borderLeft:`3px solid ${cat.color}`}}>
                     <button onClick={()=>{ if(paid) unmarkPaid(exp.id); else{setPayTarget(exp);setModal("pay");} }}
                       style={{flexShrink:0,width:32,height:32,borderRadius:10,border:`2px solid ${paid?"#34d399":"#3a3a5a"}`,background:paid?"#34d399":"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"white"}}>
                       {paid&&<Ic.Check/>}
                     </button>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:14,fontWeight:600,color:paid?"#6ee7b7":"#f0eaff",textDecoration:paid?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{exp.description}</div>
-                      <div style={{fontSize:11,color:"#6b6b8a",marginTop:2,display:"flex",gap:5,flexWrap:"wrap"}}>
-                        <span>Dia {exp.dueDay}</span>
+                      <div style={{fontSize:11,color:"#6b6b8a",marginTop:2,display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+                        <span style={{color:cat.color,fontWeight:600}}>{cat.name}</span>
+                        <span>· Dia {exp.dueDay}</span>
                         {exp.type==="parceled"&&<span>· parcela</span>}
                         {exp.accountId&&!paid&&<span>· {accName(exp.accountId)}</span>}
                         {paid&&info&&<span style={{color:"#34d399"}}>· {fmtDate(info.date)} · {accName(info.accountId)}</span>}
@@ -675,7 +900,7 @@ function App(){
           {accounts.length===0?(
             <div style={{textAlign:"center",padding:"16px 0",color:"#4a4a6a",fontSize:13}}>Nenhuma conta cadastrada</div>
           ):(
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:22}}>
               {accounts.map(acc=>(
                 <div key={acc.id} style={{...Card(),display:"flex",alignItems:"center",gap:10}}>
                   <div style={{width:36,height:36,borderRadius:11,background:"#0c2441",display:"flex",alignItems:"center",justifyContent:"center",color:"#38bdf8",flexShrink:0}}><Ic.Bank/></div>
@@ -688,6 +913,42 @@ function App(){
               ))}
             </div>
           )}
+
+          <div style={{marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:11,color:"#6b6b8a",fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Categorias ({categories.length})</span>
+            <button onClick={()=>{setEditing(null);setModal("category");}} style={{background:"linear-gradient(135deg,#a78bfa,#c084fc)",border:"none",borderRadius:10,padding:"6px 12px",cursor:"pointer",color:"white",fontSize:12,fontWeight:700}}>+ Nova</button>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:22}}>
+            {categories.map(cat=>{
+              const used = expenses.filter(e=>(e.categoryId||"cat-outros")===cat.id).length;
+              return(
+                <div key={cat.id} style={{...Card(),display:"flex",alignItems:"center",gap:10,borderLeft:`3px solid ${cat.color}`}}>
+                  <div style={{width:36,height:36,borderRadius:11,background:cat.color+"22",display:"flex",alignItems:"center",justifyContent:"center",color:cat.color,fontWeight:700,fontSize:14,flexShrink:0}}>●</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:600}}>{cat.name}</div>
+                    <div style={{fontSize:11,color:"#6b6b8a",marginTop:2}}>{used} despesa(s)</div>
+                  </div>
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>{setEditing(cat);setModal("category");}} style={{background:"#1e1e35",border:"none",borderRadius:7,padding:"5px 7px",cursor:"pointer",color:"#888",lineHeight:0}}><Ic.Edit/></button>
+                    <button onClick={()=>delCategory(cat.id)} style={{background:"#1e0a0a",border:"none",borderRadius:7,padding:"5px 7px",cursor:"pointer",color:"#f87171",lineHeight:0}}><Ic.Trash/></button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:11,color:"#6b6b8a",fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Dados</span>
+          </div>
+          <div style={{...Card(),marginBottom:14}}>
+            <div style={{fontSize:12,color:"#6b6b8a",lineHeight:1.5,marginBottom:12}}>
+              Exporte um arquivo <b>.json</b> com todos os seus dados para backup ou para compartilhar com outra pessoa. Importe para restaurar ou mesclar com os dados de outro celular.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9}}>
+              <button onClick={exportData} style={Btn("#059669,#10b981")}>↓ Exportar</button>
+              <button onClick={()=>setModal("import")} style={Btn("#0284c7,#0ea5e9")}>↑ Importar</button>
+            </div>
+          </div>
         </>}
       </div>
 
@@ -703,13 +964,19 @@ function App(){
 
       {/* Modals */}
       <Modal open={modal==="expense"} onClose={()=>{setModal(null);setEditing(null);}} title={editing?"Editar Despesa":"Nova Despesa"}>
-        <ExpenseForm initial={editing} accounts={accounts} defaultMK={mk} onSave={saveExpense}/>
+        <ExpenseForm initial={editing} accounts={accounts} categories={categories} defaultMK={mk} onSave={saveExpense}/>
       </Modal>
       <Modal open={modal==="income"} onClose={()=>{setModal(null);setEditing(null);}} title={editing?"Editar Receita":"Nova Receita"}>
         <IncomeForm initial={editing} accounts={accounts} defaultMK={mk} onSave={saveIncome}/>
       </Modal>
       <Modal open={modal==="account"} onClose={()=>{setModal(null);setEditing(null);}} title={editing?"Editar Conta":"Nova Conta"}>
         <AccountForm initial={editing} onSave={saveAccount}/>
+      </Modal>
+      <Modal open={modal==="category"} onClose={()=>{setModal(null);setEditing(null);}} title={editing?"Editar Categoria":"Nova Categoria"}>
+        <CategoryForm initial={editing} onSave={saveCategory}/>
+      </Modal>
+      <Modal open={modal==="import"} onClose={()=>setModal(null)} title="Importar Dados">
+        <ImportForm onImport={importData} onCancel={()=>setModal(null)}/>
       </Modal>
       <Modal open={modal==="pay"} onClose={()=>{setModal(null);setPayTarget(null);}} title="Confirmar Pagamento">
         {payTarget&&<PayForm expense={payTarget} accounts={accounts} onPay={markPaid}/>}
