@@ -838,7 +838,7 @@ function App(){
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14,marginBottom:10}}>
             <div>
               <div style={{fontSize:11,color:"#6b6b8a",fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>{incMonth.length} receitas</div>
-              <div style={{fontSize:16,fontWeight:700,color:"#34d399"}}>{fmtBRL(totalInc)}</div>
+              <div style={{fontSize:16,fontWeight:700,color:"#34d399",letterSpacing:hideIncome?2:0}}>{hideIncome?"R$ ••••":fmtBRL(totalInc)}</div>
             </div>
             <button onClick={()=>{setEditing(null);setModal("income");}} style={{background:"linear-gradient(135deg,#059669,#10b981)",border:"none",borderRadius:10,padding:"8px 13px",cursor:"pointer",color:"white",fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:5}}>
               <Ic.Plus/> Nova
@@ -859,7 +859,7 @@ function App(){
                     <div style={{fontSize:11,color:"#6b6b8a",marginTop:2}}>{fmtDate(inc.date)}{inc.accountId&&` · ${accName(inc.accountId)}`}</div>
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:14,fontWeight:700,color:"#34d399"}}>{fmtBRL(inc.amount)}</div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#34d399",letterSpacing:hideIncome?2:0}}>{hideIncome?"R$ ••••":fmtBRL(inc.amount)}</div>
                     <div style={{display:"flex",gap:4,marginTop:4,justifyContent:"flex-end"}}>
                       <button onClick={()=>{setEditing(inc);setModal("income");}} style={{background:"#1e1e35",border:"none",borderRadius:7,padding:"4px 6px",cursor:"pointer",color:"#888",lineHeight:0}}><Ic.Edit/></button>
                       <button onClick={()=>delIncome(inc.id)} style={{background:"#1e0a0a",border:"none",borderRadius:7,padding:"4px 6px",cursor:"pointer",color:"#f87171",lineHeight:0}}><Ic.Trash/></button>
