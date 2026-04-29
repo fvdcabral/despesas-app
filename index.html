@@ -271,7 +271,7 @@ function PinScreen({mode,onSuccess,storedPin,storedWord}){
 
 // ── Forms ─────────────────────────────────────────────────────────────────────
 function ExpenseForm({initial,accounts,categories,defaultMK,onSave}){
-  const [f,setF]=useState(initial||{description:"",amount:"",dueDay:"",type:"recurring",every:"1",repetitions:"2",startYearMonth:defaultMK,accountId:"",categoryId:"cat-outros",notes:""});
+  const [f,setF]=useState(initial||{description:"",amount:"",dueDay:String(new Date().getDate()),type:"recurring",every:"1",repetitions:"2",startYearMonth:defaultMK,accountId:"",categoryId:"cat-outros",notes:""});
   const [err,setErr]=useState("");
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const save=()=>{
@@ -338,7 +338,7 @@ function ExpenseForm({initial,accounts,categories,defaultMK,onSave}){
 }
 
 function IncomeForm({initial,accounts,defaultMK,onSave}){
-  const [f,setF]=useState(initial||{description:"",amount:"",type:"single",date:defaultMK+"-01",dueDay:"",every:"1",repetitions:"2",startYearMonth:defaultMK,accountId:"",yearMonth:defaultMK});
+  const [f,setF]=useState(initial||{description:"",amount:"",type:"single",date:todayStr(),dueDay:String(new Date().getDate()),every:"1",repetitions:"2",startYearMonth:defaultMK,accountId:"",yearMonth:defaultMK});
   const [err,setErr]=useState("");
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const t = f.type || "single";
