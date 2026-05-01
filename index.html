@@ -272,9 +272,16 @@ function PinScreen({mode,onSuccess,storedPin,storedWord}){
 
 // ── Forms ─────────────────────────────────────────────────────────────────────
 function ExpenseForm({initial,accounts,categories,defaultMK,onSave}){
-  const [f,setF]=useState(()=>({description:"",amount:"",type:"recurring",dueDay:String(new Date().getDate()),date:todayStr(),every:"1",repetitions:"2",startYearMonth:defaultMK,accountId:"",categoryId:"cat-outros",notes:"",...(initial||{})}));
+  const [f,setF]=useState(()=>initial?{...initial}:{description:"",amount:"",type:"recurring",dueDay:String(new Date().getDate()),date:todayStr(),every:"1",repetitions:"2",startYearMonth:defaultMK,accountId:"",categoryId:"cat-outros",notes:""});
   const [err,setErr]=useState("");
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const setType=newT=>setF(p=>{
+    const next={...p,type:newT};
+    if(newT==="single"&&!next.date) next.date=todayStr();
+    if(newT!=="single"&&!next.dueDay) next.dueDay=String(new Date().getDate());
+    if(newT!=="single"&&!next.startYearMonth) next.startYearMonth=defaultMK;
+    return next;
+  });
   const t = f.type || "recurring";
   const save=()=>{
     if(!f.description.trim()){setErr("Informe a descrição");return;}
@@ -298,7 +305,7 @@ function ExpenseForm({initial,accounts,categories,defaultMK,onSave}){
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <div><label style={L}>Descrição</label><input style={F} value={f.description} onChange={e=>s("description",e.target.value)} placeholder="Ex: Netflix, Aluguel, mercado..."/></div>
       <div><label style={L}>Tipo</label>
-        <select style={F} value={t} onChange={e=>s("type",e.target.value)}>
+        <select style={F} value={t} onChange={e=>setType(e.target.value)}>
           <option value="single">Única</option>
           <option value="recurring">Recorrente (sem prazo)</option>
           <option value="parceled">Parcelada / repetições fixas</option>
