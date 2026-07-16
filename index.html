@@ -732,6 +732,77 @@ function PayForm({expense,accounts,onPay}){
   );
 }
 
+// ── MonthlyCompareChart ───────────────────────────────────────────────────────
+function MonthlyCompareChart({expenses,incomes,year,month,hideIncome}){
+  const [metric,setMetric] = useState("despesas");
+  const [range,setRange]   = useState(3);
+  const buckets = [];
+  for(let i=range-1;i>=0;i--){
+    let y=year,m=month-i;
+    while(m<0){ y--; m+=12; }
+    const receitas = incomes.filter(inc=>isIncomeActiveInMonth(inc,y,m)).reduce((s,i)=>s+i.amount,0);
+    const despesas = expenses.filter(exp=>isActiveInMonth(exp,y,m)).reduce((s,e)=>s+e.amount,0);
+    buckets.push({y,m,label:MONTHS[m].substring(0,3),receitas,despesas});
+  }
+  const values = buckets.map(b=>b[metric]);
+  const maxVal = Math.max(...values,1);
+  const isReceita = metric==="receitas";
+  const color = isReceita?"#34d399":"#f87171";
+  const masked = isReceita && hideIncome;
+  const current = buckets[buckets.length-1];
+  const previous = buckets.length>=2?buckets[buckets.length-2]:null;
+  const delta = previous?(current[metric]-previous[metric]):0;
+  const deltaPct = previous&&previous[metric]>0?Math.round((delta/previous[metric])*100):0;
+  const W=300, H=170, PAD_X=18, PAD_TOP=26, PAD_BOTTOM=26;
+  const chartW = W-2*PAD_X;
+  const chartH = H-PAD_TOP-PAD_BOTTOM;
+  const slot = chartW/buckets.length;
+  const barW = Math.min(slot*0.5, 48);
+  const shortBRL = v => {
+    if(masked) return "•••";
+    if(v>=1000000) return (v/1000000).toFixed(1).replace(".",",")+"M";
+    if(v>=1000) return (v/1000).toFixed(1).replace(".",",")+"k";
+    return v.toFixed(0);
+  };
+  return(
+    <div style={{...Card(),marginTop:9}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <span style={{fontSize:11,color:"#6b6b8a",fontWeight:700,textTransform:"uppercase",letterSpacing:0.8}}>Comparativo mensal</span>
+        {previous&&!masked&&(
+          <span style={{fontSize:11,fontWeight:700,color:delta===0?"#6b6b8a":(isReceita?(delta>0?"#34d399":"#f87171"):(delta>0?"#f87171":"#34d399"))}}>
+            {delta>0?"▲":delta<0?"▼":"·"} {Math.abs(deltaPct)}% vs {previous.label}
+          </span>
+        )}
+      </div>
+      <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+        <FilterChip label="Despesas" active={metric==="despesas"} onClick={()=>setMetric("despesas")} color="#f87171"/>
+        <FilterChip label="Receitas" active={metric==="receitas"} onClick={()=>setMetric("receitas")} color="#34d399"/>
+        <div style={{flex:1,minWidth:8}}/>
+        <FilterChip label="3m" active={range===3} onClick={()=>setRange(3)}/>
+        <FilterChip label="6m" active={range===6} onClick={()=>setRange(6)}/>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:"block"}}>
+        <line x1={PAD_X} y1={H-PAD_BOTTOM} x2={W-PAD_X} y2={H-PAD_BOTTOM} stroke="#2a2a3d" strokeWidth="1"/>
+        {buckets.map((b,i)=>{
+          const val = b[metric];
+          const barH = (val/maxVal)*chartH;
+          const cx = PAD_X + i*slot + slot/2;
+          const x = cx - barW/2;
+          const y = H-PAD_BOTTOM-barH;
+          const isCurrent = b.y===year && b.m===month;
+          return(
+            <g key={`${b.y}-${b.m}`}>
+              <rect x={x} y={y} width={barW} height={Math.max(barH,2)} fill={color} opacity={isCurrent?1:0.5} rx="4"/>
+              <text x={cx} y={y-6} fill={color} fontSize="10" fontWeight="700" textAnchor="middle" opacity={isCurrent?1:0.75}>{shortBRL(val)}</text>
+              <text x={cx} y={H-8} fill={isCurrent?"#f0eaff":"#6b6b8a"} fontSize="10" fontWeight={isCurrent?700:500} textAnchor="middle">{b.label}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 function App(){
   const now = new Date();
@@ -921,10 +992,10 @@ function App(){
         {tab==="dashboard"&&<>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginTop:14}}>
             {[
-              {l:"Saldo Real",    v:realBalance, c:realBalance>=0?"#34d399":"#f87171", tip:"Receitas − Pagas", sensitive:true},
-              {l:"Saldo Previsto",v:prevBalance, c:prevBalance>=0?"#818cf8":"#f87171", tip:"Receitas − Total mês", sensitive:true},
               {l:"Receitas",      v:totalInc,    c:"#34d399",  tip:"Entradas no mês", sensitive:true},
-              {l:"A Pagar",       v:totalPending,c:"#f87171",  tip:"Despesas em aberto"},
+              {l:"Despesas",      v:totalDue,    c:"#f87171",  tip:"Total do mês"},
+              {l:"Saldo Real",    v:realBalance, c:realBalance>=0?"#34d399":"#f87171", tip:"Receitas − Pagas", sensitive:true},
+              {l:"Saldo Previsto",v:prevBalance, c:prevBalance>=0?"#818cf8":"#f87171", tip:"Receitas − Despesas", sensitive:true},
             ].map((c,i)=>(
               <div key={i} style={{...Card(c.c+"44"),borderLeft:`3px solid ${c.c}`}}>
                 <div style={{fontSize:10,color:"#6b6b8a",fontWeight:700,textTransform:"uppercase",letterSpacing:0.9,marginBottom:2}}>{c.l}</div>
@@ -974,6 +1045,9 @@ function App(){
               </div>
             );
           })()}
+
+          {/* Comparativo mensal */}
+          {(expenses.length>0||incomes.length>0)&&<MonthlyCompareChart expenses={expenses} incomes={incomes} year={year} month={month} hideIncome={hideIncome}/>}
 
           {/* Commitment */}
           <div style={{...Card(),marginTop:9}}>
