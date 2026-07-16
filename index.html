@@ -1073,7 +1073,7 @@ function App(){
             <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} aria-label={theme==="dark"?"Ativar tema claro":"Ativar tema escuro"} style={{background:"var(--surface)",border:"1.5px solid var(--border)",borderRadius:11,padding:"8px 10px",cursor:"pointer",color:"var(--text-muted)",lineHeight:0,display:"flex",alignItems:"center"}}>
               {theme==="dark"?<Ic.Sun/>:<Ic.Moon/>}
             </button>
-            <button onClick={()=>setHideIncome(h=>!h)} aria-label={hideIncome?"Mostrar receitas":"Ocultar receitas"} style={{background:"var(--surface)",border:"1.5px solid var(--border)",borderRadius:11,padding:"8px 10px",cursor:"pointer",color:hideIncome?"var(--warning)":"var(--text-muted)",lineHeight:0,display:"flex",alignItems:"center"}}>
+            <button onClick={()=>setHideIncome(h=>!h)} aria-label={hideIncome?"Mostrar valores":"Ocultar valores"} style={{background:"var(--surface)",border:"1.5px solid var(--border)",borderRadius:11,padding:"8px 10px",cursor:"pointer",color:hideIncome?"var(--warning)":"var(--text-muted)",lineHeight:0,display:"flex",alignItems:"center"}}>
               {hideIncome?<Ic.EyeOff/>:<Ic.Eye/>}
             </button>
             <button onClick={()=>{setEditing(null);setModal("account");}} style={{background:"var(--surface)",border:"1.5px solid var(--border)",borderRadius:11,padding:"7px 11px",cursor:"pointer",color:"var(--text-muted)",lineHeight:0,display:"flex",alignItems:"center",gap:6}}>
@@ -1098,7 +1098,7 @@ function App(){
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginTop:14}}>
             {[
               {l:"Receitas",      v:totalInc,    c:"var(--success)", bg:"var(--success-bg)", tip:"Entradas no mês", sensitive:true},
-              {l:"Despesas",      v:totalDue,    c:"var(--danger)",  bg:"var(--danger-bg)",  tip:"Total do mês"},
+              {l:"Despesas",      v:totalDue,    c:"var(--danger)",  bg:"var(--danger-bg)",  tip:"Total do mês", sensitive:true},
               {l:"Saldo Real",    v:realBalance, c:realBalance>=0?"var(--success)":"var(--danger)", bg:realBalance>=0?"var(--success-bg)":"var(--danger-bg)", tip:"Receitas − Pagas", sensitive:true},
               {l:"Saldo Previsto",v:prevBalance, c:prevBalance>=0?"var(--accent-soft)":"var(--danger)", bg:prevBalance>=0?"var(--accent-bg)":"var(--danger-bg)", tip:"Receitas − Despesas", sensitive:true},
             ].map((c,i)=>(
@@ -1166,8 +1166,8 @@ function App(){
                 transition:"width .6s ease"}}/>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:11,color:"var(--text-muted)"}}>
-              <span>Pagas: {fmtBRL(totalPaid)}</span>
-              <span>Total mês: {fmtBRL(totalDue)}</span>
+              <span>Pagas: {hideIncome?"R$ ••••":fmtBRL(totalPaid)}</span>
+              <span>Total mês: {hideIncome?"R$ ••••":fmtBRL(totalDue)}</span>
             </div>
             {!hideIncome&&totalInc>0&&totalDue>totalInc&&<div style={{color:"var(--danger)",fontSize:11,marginTop:6,fontWeight:600}}>⚠ Despesas superam a receita este mês!</div>}
             {!hideIncome&&totalInc===0&&<div style={{color:"var(--warning)",fontSize:11,marginTop:6}}>Nenhuma receita lançada ainda</div>}
@@ -1177,8 +1177,8 @@ function App(){
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:9}}>
             {[
               {l:"Despesas",v:`${dueMonth.filter(e=>isPaid(e.id)).length}/${dueMonth.length}`,c:"var(--accent-soft)"},
-              {l:"Total mês", v:fmtBRL(totalDue),c:"var(--accent-soft)",sm:true},
-              {l:"Pagas",     v:fmtBRL(totalPaid),c:"var(--success)",sm:true},
+              {l:"Total mês", v:hideIncome?"R$ ••••":fmtBRL(totalDue),c:"var(--accent-soft)",sm:true},
+              {l:"Pagas",     v:hideIncome?"R$ ••••":fmtBRL(totalPaid),c:"var(--success)",sm:true},
             ].map((c,i)=>(
               <div key={i} style={{...Card(),textAlign:"center"}}>
                 <div style={{fontSize:9,color:"var(--text-muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:0.7,marginBottom:3}}>{c.l}</div>
@@ -1204,7 +1204,7 @@ function App(){
                       {e.accountId&&` · ${accName(e.accountId)}`}
                     </div>
                   </div>
-                  <div style={{fontSize:14,fontWeight:700,color:"var(--danger)",flexShrink:0}}>{fmtBRL(e.amount)}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:"var(--danger)",flexShrink:0,letterSpacing:hideIncome?2:0}}>{hideIncome?"R$ ••••":fmtBRL(e.amount)}</div>
                 </div>
               );
             })}
