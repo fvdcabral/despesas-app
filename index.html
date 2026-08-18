@@ -151,7 +151,10 @@ const DEFAULT_CATEGORIES = [
 const CATEGORY_COLORS = ["var(--danger)","#fb923c","var(--warning)","#a3e635","var(--success)","#22d3ee","var(--info-strong)","var(--accent-soft)","var(--accent-soft)","#e879f9","#f472b6","var(--text-muted)"];
 
 const isActiveInMonth = (exp, year, month) => {
-  if(exp.type === "single") return exp.yearMonth === `${year}-${String(month+1).padStart(2,"0")}`;
+  const mk = `${year}-${String(month+1).padStart(2,"0")}`;
+  if(exp.type === "single") return exp.yearMonth === mk;
+  if(exp.skipMonths && exp.skipMonths.includes(mk)) return false;
+  if(exp.endYearMonth && mk > exp.endYearMonth) return false;
   const start = exp.startYearMonth || "2020-01";
   const [sy,sm] = start.split("-").map(Number);
   const diff = (year-sy)*12 + (month-(sm-1));
@@ -162,13 +165,23 @@ const isActiveInMonth = (exp, year, month) => {
 
 const isIncomeActiveInMonth = (inc, year, month) => {
   const t = inc.type || "single";
-  if(t === "single") return inc.yearMonth === `${year}-${String(month+1).padStart(2,"0")}`;
+  const mk = `${year}-${String(month+1).padStart(2,"0")}`;
+  if(t === "single") return inc.yearMonth === mk;
+  if(inc.skipMonths && inc.skipMonths.includes(mk)) return false;
+  if(inc.endYearMonth && mk > inc.endYearMonth) return false;
   const start = inc.startYearMonth || inc.yearMonth || "2020-01";
   const [sy,sm] = start.split("-").map(Number);
   const diff = (year-sy)*12 + (month-(sm-1));
   if(diff < 0) return false;
   if(t === "parceled") return diff < (inc.repetitions||1) && diff % (inc.every||1) === 0;
   return diff % (inc.every||1) === 0;
+};
+
+// Retorna o mês anterior a mk (formato YYYY-MM). Ex: "2026-01" → "2025-12"
+const prevMonthKey = (mk) => {
+  const [y,m] = mk.split("-").map(Number);
+  if(m === 1) return `${y-1}-12`;
+  return `${y}-${String(m-1).padStart(2,"0")}`;
 };
 
 const incomeParcelIndex = (inc, year, month) => {
@@ -819,6 +832,35 @@ function StatementImport({accounts,categories,existingExpenses,onImport,onClose}
   );
 }
 
+function DeleteChoiceForm({item,kind,mk,onDeleteThisMonth,onDeleteFromNow}){
+  const monthLabel = (()=>{
+    const [y,m] = mk.split("-").map(Number);
+    return `${MONTHS[m-1]}/${y}`;
+  })();
+  const kindLabel = kind === "expense" ? "despesa" : "receita";
+  const typeLabel = item.type === "parceled" ? "parcelada" : "recorrente";
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{...Card(),textAlign:"center"}}>
+        <div style={{fontSize:11,color:"var(--text-muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{kindLabel} {typeLabel}</div>
+        <div style={{fontSize:15,fontWeight:700,color:"var(--text)"}}>{item.description}</div>
+        <div style={{fontSize:12,color:"var(--text-muted)",marginTop:4}}>{fmtBRL(item.amount)}</div>
+      </div>
+      <div style={{fontSize:13,color:"var(--text-muted)",lineHeight:1.5}}>
+        O que deseja remover? Meses passados não são afetados.
+      </div>
+      <button onClick={onDeleteThisMonth} style={{...Card("var(--warning-border)"),background:"var(--warning-bg)",cursor:"pointer",textAlign:"left"}}>
+        <div style={{fontSize:14,fontWeight:700,color:"var(--warning)"}}>Só este mês</div>
+        <div style={{fontSize:11,color:"var(--text-muted)",marginTop:3}}>Remove apenas em <b>{monthLabel}</b>. Continua aparecendo nos outros meses.</div>
+      </button>
+      <button onClick={onDeleteFromNow} style={{...Card("var(--danger-border)"),background:"var(--danger-bg)",cursor:"pointer",textAlign:"left"}}>
+        <div style={{fontSize:14,fontWeight:700,color:"var(--danger)"}}>Deste mês em diante</div>
+        <div style={{fontSize:11,color:"var(--text-muted)",marginTop:3}}>Encerra a partir de <b>{monthLabel}</b>. Histórico anterior fica preservado.</div>
+      </button>
+    </div>
+  );
+}
+
 function PayForm({expense,accounts,onPay}){
   const [accountId,setAccountId]=useState(expense.accountId||"");
   const [date,setDate]=useState(todayStr());
@@ -941,6 +983,7 @@ function App(){
   const [modal, setModal] = useState(null);
   const [editing,   setEditing]   = useState(null);
   const [payTarget, setPayTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [filterCat,   setFilterCat]    = useState("");
   const [filterAcc,   setFilterAcc]    = useState("");
   const [filterStatus,setFilterStatus] = useState("");
@@ -1012,8 +1055,43 @@ function App(){
   const saveIncome=d=>{  const dd=stamp(d); setIncomes(p=>{  const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
   const saveAccount=d=>{ const dd=stamp(d); setAccounts(p=>{ const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
   const saveCategory=d=>{ const dd=stamp(d); setCategories(p=>{ const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
-  const delExpense=id=>{ if(confirm("Remover despesa?")) setExpenses(p=>p.filter(e=>e.id!==id)); };
-  const delIncome=id=>{  if(confirm("Remover receita?")) setIncomes(p=>p.filter(i=>i.id!==id)); };
+  const delExpense=id=>{
+    const exp = expenses.find(e=>e.id===id);
+    if(!exp) return;
+    if((exp.type||"single")==="single"){
+      if(confirm("Remover despesa?")) setExpenses(p=>p.filter(e=>e.id!==id));
+      return;
+    }
+    setDeleteTarget({kind:"expense",item:exp});
+    setModal("delete");
+  };
+  const delIncome=id=>{
+    const inc = incomes.find(i=>i.id===id);
+    if(!inc) return;
+    if((inc.type||"single")==="single"){
+      if(confirm("Remover receita?")) setIncomes(p=>p.filter(i=>i.id!==id));
+      return;
+    }
+    setDeleteTarget({kind:"income",item:inc});
+    setModal("delete");
+  };
+  const applyDeleteThisMonth = () => {
+    if(!deleteTarget) return;
+    const {kind,item} = deleteTarget;
+    const patch = { skipMonths: [...(item.skipMonths||[]), mk], updatedAt: Date.now() };
+    if(kind==="expense") setExpenses(p=>p.map(e=>e.id===item.id?{...e,...patch}:e));
+    else setIncomes(p=>p.map(i=>i.id===item.id?{...i,...patch}:i));
+    setModal(null); setDeleteTarget(null);
+  };
+  const applyDeleteFromNow = () => {
+    if(!deleteTarget) return;
+    const {kind,item} = deleteTarget;
+    const end = prevMonthKey(mk);
+    const patch = { endYearMonth: end, updatedAt: Date.now() };
+    if(kind==="expense") setExpenses(p=>p.map(e=>e.id===item.id?{...e,...patch}:e));
+    else setIncomes(p=>p.map(i=>i.id===item.id?{...i,...patch}:i));
+    setModal(null); setDeleteTarget(null);
+  };
   const delAccount=id=>{ if(confirm("Remover conta?"))  setAccounts(p=>p.filter(a=>a.id!==id)); };
   const delCategory=id=>{
     if(id==="cat-outros"){alert("A categoria 'Outros' não pode ser removida (é usada como padrão).");return;}
@@ -1538,6 +1616,9 @@ function App(){
       </Modal>
       <Modal open={modal==="statement"} onClose={()=>setModal(null)} title="Importar Fatura de Cartão">
         <StatementImport accounts={accounts} categories={categories} existingExpenses={expenses} onImport={importStatement} onClose={()=>setModal(null)}/>
+      </Modal>
+      <Modal open={modal==="delete"} onClose={()=>{setModal(null);setDeleteTarget(null);}} title={deleteTarget?.kind==="income"?"Remover Receita":"Remover Despesa"}>
+        {deleteTarget&&<DeleteChoiceForm item={deleteTarget.item} kind={deleteTarget.kind} mk={mk} onDeleteThisMonth={applyDeleteThisMonth} onDeleteFromNow={applyDeleteFromNow}/>}
       </Modal>
       <Modal open={modal==="pay"} onClose={()=>{setModal(null);setPayTarget(null);}} title="Confirmar Pagamento">
         {payTarget&&<PayForm expense={payTarget} accounts={accounts} onPay={markPaid}/>}
