@@ -832,6 +832,32 @@ function StatementImport({accounts,categories,existingExpenses,onImport,onClose}
   );
 }
 
+function EditScopeForm({original,newData,kind,mk,onEditThisMonth,onEditFromNow}){
+  const monthLabel = (()=>{ const [y,m]=mk.split("-").map(Number); return `${MONTHS[m-1]}/${y}`; })();
+  const kindLabel = kind==="expense"?"despesa":"receita";
+  const typeLabel = original.type==="parceled"?"parcelada":"recorrente";
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{...Card(),textAlign:"center"}}>
+        <div style={{fontSize:11,color:"var(--text-muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{kindLabel} {typeLabel}</div>
+        <div style={{fontSize:15,fontWeight:700,color:"var(--text)"}}>{newData.description||original.description}</div>
+        <div style={{fontSize:12,color:"var(--text-muted)",marginTop:4}}>{fmtBRL(newData.amount||original.amount)}</div>
+      </div>
+      <div style={{fontSize:13,color:"var(--text-muted)",lineHeight:1.5}}>
+        Onde a alteração deve valer? Meses passados não são afetados.
+      </div>
+      <button onClick={onEditThisMonth} style={{...Card("var(--warning-border)"),background:"var(--warning-bg)",cursor:"pointer",textAlign:"left"}}>
+        <div style={{fontSize:14,fontWeight:700,color:"var(--warning)"}}>Só este mês</div>
+        <div style={{fontSize:11,color:"var(--text-muted)",marginTop:3}}>Aplica em <b>{monthLabel}</b> como um lançamento único. Nos outros meses continua o valor original.</div>
+      </button>
+      <button onClick={onEditFromNow} style={{...Card("var(--accent-bg)"),background:"var(--accent-bg)",cursor:"pointer",textAlign:"left"}}>
+        <div style={{fontSize:14,fontWeight:700,color:"var(--accent-soft)"}}>Deste mês em diante</div>
+        <div style={{fontSize:11,color:"var(--text-muted)",marginTop:3}}>A partir de <b>{monthLabel}</b> vale a nova versão. Histórico anterior fica preservado.</div>
+      </button>
+    </div>
+  );
+}
+
 function DeleteChoiceForm({item,kind,mk,onDeleteThisMonth,onDeleteFromNow}){
   const monthLabel = (()=>{
     const [y,m] = mk.split("-").map(Number);
@@ -984,6 +1010,7 @@ function App(){
   const [editing,   setEditing]   = useState(null);
   const [payTarget, setPayTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [editScope,    setEditScope]    = useState(null);
   const [filterCat,   setFilterCat]    = useState("");
   const [filterAcc,   setFilterAcc]    = useState("");
   const [filterStatus,setFilterStatus] = useState("");
@@ -1051,8 +1078,31 @@ function App(){
   const nextMonth=()=>{ if(month===11){setYear(y=>y+1);setMonth(0);}else setMonth(m=>m+1); };
 
   const stamp = d => ({...d, updatedAt: Date.now()});
-  const saveExpense=d=>{ const dd=stamp(d); setExpenses(p=>{ const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
-  const saveIncome=d=>{  const dd=stamp(d); setIncomes(p=>{  const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
+  const upsert = (list, dd) => { const i=list.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...list];a[i]=dd;return a;} return [...list,dd]; };
+  const saveExpense=d=>{
+    const dd=stamp(d);
+    const original = editing;
+    if(original && (original.type==="recurring"||original.type==="parceled")){
+      setDeleteTarget(null);
+      setEditScope({kind:"expense",original,newData:dd});
+      setModal("editScope");
+      return;
+    }
+    setExpenses(p=>upsert(p,dd));
+    setModal(null); setEditing(null);
+  };
+  const saveIncome=d=>{
+    const dd=stamp(d);
+    const original = editing;
+    if(original && (original.type==="recurring"||original.type==="parceled")){
+      setDeleteTarget(null);
+      setEditScope({kind:"income",original,newData:dd});
+      setModal("editScope");
+      return;
+    }
+    setIncomes(p=>upsert(p,dd));
+    setModal(null); setEditing(null);
+  };
   const saveAccount=d=>{ const dd=stamp(d); setAccounts(p=>{ const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
   const saveCategory=d=>{ const dd=stamp(d); setCategories(p=>{ const i=p.findIndex(e=>e.id===dd.id); if(i>=0){const a=[...p];a[i]=dd;return a;} return [...p,dd]; }); setModal(null);setEditing(null); };
   const delExpense=id=>{
@@ -1091,6 +1141,62 @@ function App(){
     if(kind==="expense") setExpenses(p=>p.map(e=>e.id===item.id?{...e,...patch}:e));
     else setIncomes(p=>p.map(i=>i.id===item.id?{...i,...patch}:i));
     setModal(null); setDeleteTarget(null);
+  };
+
+  const applyEditThisMonth = () => {
+    if(!editScope) return;
+    const {kind,original,newData} = editScope;
+    const now = Date.now();
+    const dueDay = newData.dueDay || parseInt((newData.date||"").substring(8,10)) || 1;
+    const skipPatch = {...original, skipMonths:[...(original.skipMonths||[]), mk], updatedAt: now};
+    const singleDate = `${mk}-${String(dueDay).padStart(2,"0")}`;
+    const single = {
+      description: newData.description,
+      amount: newData.amount,
+      accountId: newData.accountId||"",
+      categoryId: newData.categoryId||original.categoryId||"cat-outros",
+      notes: newData.notes||"",
+      id: `${now}-only`,
+      type: "single",
+      date: singleDate,
+      yearMonth: mk,
+      startYearMonth: mk,
+      dueDay,
+      updatedAt: now
+    };
+    if(kind==="expense") setExpenses(p=>[...p.map(e=>e.id===original.id?skipPatch:e), single]);
+    else                 setIncomes(p=>[...p.map(i=>i.id===original.id?skipPatch:i),  single]);
+    setModal(null); setEditing(null); setEditScope(null);
+  };
+
+  const applyEditFromNow = () => {
+    if(!editScope) return;
+    const {kind,original,newData} = editScope;
+    const now = Date.now();
+    const end = prevMonthKey(mk);
+    const closed = {...original, endYearMonth: end, updatedAt: now};
+    let repetitions = newData.repetitions;
+    if(original.type==="parceled" && newData.type==="parceled" && (newData.repetitions||0) === (original.repetitions||0)){
+      const start = original.startYearMonth || "2020-01";
+      const [sy,sm] = start.split("-").map(Number);
+      const [y,mo] = mk.split("-").map(Number);
+      const diff = (y-sy)*12 + ((mo-1)-(sm-1));
+      const idx = Math.floor(diff/(original.every||1)) + 1;
+      repetitions = Math.max(1, (original.repetitions||1) - idx + 1);
+    }
+    const created = {
+      ...newData,
+      id: `${now}-cont`,
+      startYearMonth: mk,
+      yearMonth: mk,
+      repetitions,
+      updatedAt: now
+    };
+    delete created.skipMonths;
+    delete created.endYearMonth;
+    if(kind==="expense") setExpenses(p=>[...p.map(e=>e.id===original.id?closed:e), created]);
+    else                 setIncomes(p=>[...p.map(i=>i.id===original.id?closed:i),  created]);
+    setModal(null); setEditing(null); setEditScope(null);
   };
   const delAccount=id=>{ if(confirm("Remover conta?"))  setAccounts(p=>p.filter(a=>a.id!==id)); };
   const delCategory=id=>{
@@ -1619,6 +1725,9 @@ function App(){
       </Modal>
       <Modal open={modal==="delete"} onClose={()=>{setModal(null);setDeleteTarget(null);}} title={deleteTarget?.kind==="income"?"Remover Receita":"Remover Despesa"}>
         {deleteTarget&&<DeleteChoiceForm item={deleteTarget.item} kind={deleteTarget.kind} mk={mk} onDeleteThisMonth={applyDeleteThisMonth} onDeleteFromNow={applyDeleteFromNow}/>}
+      </Modal>
+      <Modal open={modal==="editScope"} onClose={()=>{setModal(null);setEditing(null);setEditScope(null);}} title={editScope?.kind==="income"?"Editar Receita":"Editar Despesa"}>
+        {editScope&&<EditScopeForm original={editScope.original} newData={editScope.newData} kind={editScope.kind} mk={mk} onEditThisMonth={applyEditThisMonth} onEditFromNow={applyEditFromNow}/>}
       </Modal>
       <Modal open={modal==="pay"} onClose={()=>{setModal(null);setPayTarget(null);}} title="Confirmar Pagamento">
         {payTarget&&<PayForm expense={payTarget} accounts={accounts} onPay={markPaid}/>}
